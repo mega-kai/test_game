@@ -1,0 +1,18 @@
+{
+    "run_right": {
+        "tex_x": 0,
+        "tex_y": 32,
+        "tex_width": 32,
+        "tex_height": 32,
+        "frames": 10,
+        "origin": 32
+    },
+    "bg_grass": {
+        "tex_x": 256,
+        "tex_y": 0,
+        "tex_width": 32,
+        "tex_height": 32,
+        "frames": 1,
+        "origin": 16
+    }
+}
