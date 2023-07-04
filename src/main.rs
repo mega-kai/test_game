@@ -11,6 +11,7 @@ use winit::event::VirtualKeyCode;
 
 const HEIGHT_RESOLUTION_HALF: f32 = 64.0;
 const MAX_RESOLUTION_HALF: f32 = 256.0;
+const MAX_SPRITES_NUM: u32 = 16;
 
 struct ArrowKey {
     up: bool,
@@ -19,9 +20,9 @@ struct ArrowKey {
     right: bool,
 }
 impl ArrowKey {
-    fn vec(&self, speed: f32) -> (f32, f32) {
-        let mut x = (self.right as i32 as f32 - self.left as i32 as f32) * speed;
-        let mut y = (self.up as i32 as f32 - self.down as i32 as f32) * speed;
+    fn vec(&self, max_speed: f32) -> (f32, f32) {
+        let mut x = (self.right as i32 as f32 - self.left as i32 as f32) * max_speed;
+        let mut y = (self.up as i32 as f32 - self.down as i32 as f32) * max_speed;
         if x != 0f32 && y != 0f32 {
             x /= 2f32.sqrt();
             y /= 2f32.sqrt();
@@ -38,48 +39,51 @@ impl ArrowKey {
     }
 }
 
-struct PlayerHandle(usize);
+struct PlayerIndex(usize);
 
 struct GlobalMouseClickPos(f32, f32);
 
-struct MinionsSpawn(u32);
+struct MinionsSpawn(Vec<usize>);
 
 fn prep_func(table: &mut ecs::Table) {
     table.add_state(ArrowKey::new_empty()).unwrap();
     let sprite_master = table.read_state::<SpriteMaster3000>().unwrap();
 
     let start_cam_offset = (0.0, -32.0);
-    let (player_index, player_sprite) = sprite_master.add_sprite(table, "run_right").unwrap();
-    player_sprite.pos_x = -16.0 + start_cam_offset.0;
-    player_sprite.pos_y = 16.0 + start_cam_offset.1;
-    player_sprite.depth = 0.5;
-    player_sprite.duration = 1.0 / 24.0;
+    let (player_index, player_sprite) = sprite_master
+        .add_sprite(
+            "idle_right",
+            (-16.0 + start_cam_offset.0, 16.0 + start_cam_offset.1),
+            // (0.0, 0.0),
+            0.5,
+        )
+        .unwrap();
+    // player_sprite.flipped_x = 1;
 
-    // println!("{:?}", sprite_master.available_buffer_indices);
-    // println!("{:?}", player_sprite);
     let size = 1024.0;
-    let (_, bg_sprite) = sprite_master.add_sprite(table, "bg_grass").unwrap();
-    bg_sprite.pos_x = -size / 2.0 + start_cam_offset.0;
-    bg_sprite.pos_y = -16.0 + start_cam_offset.1;
-    bg_sprite.depth = 0.9;
-    bg_sprite.duration = 0.0;
-    // for repeating patterns
+    let (_, bg_sprite) = sprite_master
+        .add_sprite(
+            "bg_grass",
+            (-size / 2.0 + start_cam_offset.0, -16.0 + start_cam_offset.1),
+            0.9,
+        )
+        .unwrap();
     bg_sprite.width = size;
-    bg_sprite.height = size / 2.0;
+    bg_sprite.height = size;
 
-    table.add_state(PlayerHandle(player_index)).unwrap();
+    table.add_state(PlayerIndex(player_index)).unwrap();
     table.add_state(GlobalMouseClickPos(0.0, 0.0)).unwrap();
-    table.add_state(MinionsSpawn(0)).unwrap();
-
-    // renderer::make_tex_map();
+    table.add_state(MinionsSpawn(vec![])).unwrap();
 }
 
 fn entry_point(table: &mut ecs::Table) {
     // important states
     let running_state = table.read_state::<RunningState>().unwrap();
     let uniform_data = table.read_state::<Uniform>().unwrap();
-    let player_index = table.read_state::<PlayerHandle>().unwrap().0;
+    let sprite_master = table.read_state::<SpriteMaster3000>().unwrap();
+    let player_index = table.read_state::<PlayerIndex>().unwrap().0;
     let player_sprite = table.read_single::<Sprite>(player_index).unwrap();
+
     let arrow_key_state = table.read_state::<ArrowKey>().unwrap();
     let global_click_pos = table.read_state::<GlobalMouseClickPos>().unwrap();
     let mod_state = table.read_state::<winit::event::ModifiersState>().unwrap();
@@ -95,62 +99,31 @@ fn entry_point(table: &mut ecs::Table) {
             * uniform_data.height_resolution,
     );
 
-    let sprite_master = table.read_state::<SpriteMaster3000>().unwrap();
-
     // quitting
     if key_state.just_clicked(VirtualKeyCode::Q) {
         *running_state = RunningState::Closed;
     }
-    // show dtime
-    if mouse_state.right_button_pressed() {
-        println!("{:?}", uniform_data.delta_time);
-    }
 
-    // show uniform data
-    if key_state.just_clicked(VirtualKeyCode::Space) {
-        // println!("{:?}", uniform_data);
-        // println!("{:?}", (mouse_state.x(), mouse_state.y()));
-        // println!("{:?}", table.read_column::<Sprite>().unwrap());
-    }
-
-    // spawn minions
-    if key_state.just_clicked(VirtualKeyCode::C) {
-        let minions_spawned = table.read_state::<MinionsSpawn>().unwrap();
-        minions_spawned.0 += 1;
-        // let mut clone = player_sprite.clone();
-        // clone.pos_y += 0.001 * rand::random::<f32>();
-        // clone.anim_buffer_index += minions_spawned.0;
-        // table.insert_new(clone);
-    }
-
-    // check sprite num
-    if key_state.just_clicked(VirtualKeyCode::Home) {
-        println!("{:?}", table.read_column::<Sprite>().unwrap().len());
-    }
-
-    // check sprite master
-    if key_state.just_clicked(VirtualKeyCode::Delete) {
-        sprite_master.print();
-    }
-
-    // drag cam with mouse
-    if mouse_state.middle_button_clicked() {
+    // update global mouse position everytime a mouse click event is fired
+    if mouse_state.middle_button_clicked()
+        || mouse_state.left_button_clicked()
+        || mouse_state.right_button_clicked()
+    {
         global_click_pos.0 = relative_click_pos.0 - uniform_data.global_offset_x;
         global_click_pos.1 = relative_click_pos.1 - uniform_data.global_offset_y;
     }
-    if mouse_state.middle_button_released() {
+    if mouse_state.middle_button_released()
+        || mouse_state.left_button_released()
+        || mouse_state.right_button_released()
+    {
         global_click_pos.0 = 0.0;
         global_click_pos.1 = 0.0;
     }
+
+    // drag cam with mouse
     if mouse_state.middle_button_pressed() {
         uniform_data.global_offset_x = relative_click_pos.0 - global_click_pos.0;
         uniform_data.global_offset_y = relative_click_pos.1 - global_click_pos.1;
-        // println!("{:?}", centralized_mouse_pos_in_pixel);
-    }
-
-    // get character position
-    if key_state.just_clicked(VirtualKeyCode::End) {
-        println!("{:?}", (player_sprite.pos_x, player_sprite.pos_y));
     }
 
     // zooming in and out
@@ -165,37 +138,86 @@ fn entry_point(table: &mut ecs::Table) {
         }
     }
 
+    // show dtime
+    if mouse_state.right_button_pressed() {
+        println!("{:?}", uniform_data.delta_time);
+    }
+
+    // show data
+    if key_state.just_clicked(VirtualKeyCode::Space) {
+        // println!("{:?}", uniform_data);
+        // println!("{:?}", (mouse_state.x(), mouse_state.y()));
+        // println!("{:?}", table.read_column::<Sprite>().unwrap());
+        println!("{:?}", sprite_master.occupied_indices);
+        // println!("{:?}", (player_sprite.pos_x, player_sprite.pos_y));
+
+        // player_sprite.flipped_y = if player_sprite.flipped_y == 0 { 1 } else { 0 };
+        // player_sprite.paused = if player_sprite.paused == 0 { 1 } else { 0 };
+        // player_sprite.reversed = if player_sprite.reversed == 0 { 1 } else { 0 };
+        // player_sprite.duration *= 0.95;
+        // println!("{:?}", player_sprite.duration);
+        // player_sprite.looping = if player_sprite.looping == 0 { 1 } else { 0 };
+    }
+
+    // change state of animation
+    // if key_state.just_clicked(VirtualKeyCode::X) {
+    //     sprite_master
+    //         .change_state(player_index, "jump", false)
+    //         .unwrap();
+    // }
+    // if key_state.just_clicked(VirtualKeyCode::C) {
+    //     sprite_master
+    //         .change_state(player_index, "test", false)
+    //         .unwrap();
+    // }
+
+    // spawn minions
+    if mouse_state.left_button_clicked() & !mouse_state.middle_button_pressed() {
+        let minions_spawned = table.read_state::<MinionsSpawn>().unwrap();
+        let (index, new_sprite) = sprite_master.clone_add(player_index).unwrap();
+        new_sprite.pos_x = global_click_pos.0 - 16.0;
+        new_sprite.pos_y = global_click_pos.1 + 16.0 + 0.001 * (rand::random::<f32>() - 0.5);
+        minions_spawned.0.push(index);
+    }
+    // clear minions
+    if key_state.just_clicked(VirtualKeyCode::V) {
+        let minions_spawned = table.read_state::<MinionsSpawn>().unwrap();
+        for each in &minions_spawned.0 {
+            sprite_master.remove_sprite(*each).unwrap();
+        }
+        println!("{:?}", minions_spawned.0);
+        minions_spawned.0.clear();
+    }
+
     // updating sprite position
-    if key_state.is_pressed(VirtualKeyCode::Left) {
+    // todo add accelaration
+
+    if key_state.is_pressed(VirtualKeyCode::A) {
         arrow_key_state.left = true;
-        // player_sprite.tex_x = 0.0;
-        // player_sprite.tex_y = 32.0;
     } else {
         arrow_key_state.left = false;
     }
-    if key_state.is_pressed(VirtualKeyCode::Right) {
+    if key_state.is_pressed(VirtualKeyCode::D) {
         arrow_key_state.right = true;
-        // player_sprite.tex_x = 64.0;
-        // player_sprite.tex_y = 32.0;
     } else {
         arrow_key_state.right = false;
     }
 
-    // if key_state.is_pressed(VirtualKeyCode::Up) {
-    //     arrow_key_state.up = true;
-    //     player_sprite.tex_x = 64.0;
-    //     player_sprite.tex_y = 0.0;
-    // } else {
-    //     arrow_key_state.up = false;
-    // }
-    // if key_state.is_pressed(VirtualKeyCode::Down) {
-    //     arrow_key_state.down = true;
-    //     player_sprite.tex_x = 0.0;
-    //     player_sprite.tex_y = 0.0;
-    // } else {
-    //     arrow_key_state.down = false;
-    // }
     let vec = arrow_key_state.vec(75.0 * uniform_data.delta_time);
+    if vec.0 != 0.0 {
+        if vec.0 < 0.0 {
+            player_sprite.flipped_x = 1;
+        } else {
+            player_sprite.flipped_x = 0;
+        }
+        sprite_master
+            .change_state(player_index, "run_right", false)
+            .unwrap();
+    } else {
+        sprite_master
+            .change_state(player_index, "idle_right", false)
+            .unwrap();
+    }
     player_sprite.pos_x += vec.0;
     player_sprite.pos_y += vec.1;
 }
@@ -207,7 +229,7 @@ fn post_func(table: &mut ecs::Table) {
 fn main() {
     renderer::run(
         HEIGHT_RESOLUTION_HALF,
-        1024,
+        MAX_SPRITES_NUM,
         entry_point,
         prep_func,
         post_func,

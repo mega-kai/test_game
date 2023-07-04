@@ -1,11 +1,23 @@
 {
-    "run_right": {
+    "idle_right": {
         "tex_x": 0,
         "tex_y": 32,
         "tex_width": 32,
         "tex_height": 32,
         "frames": 10,
-        "origin": 32
+        "origin": 32,
+        "looping": 1,
+        "frames_per_sec": 24
+    },
+    "run_right": {
+        "tex_x": 0,
+        "tex_y": 64,
+        "tex_width": 32,
+        "tex_height": 32,
+        "frames": 8,
+        "origin": 32,
+        "looping": 1,
+        "frames_per_sec": 24
     },
     "bg_grass": {
         "tex_x": 256,
@@ -13,6 +25,68 @@
         "tex_width": 32,
         "tex_height": 32,
         "frames": 1,
-        "origin": 16
+        "origin": 16,
+        "looping": 0,
+        "frames_per_sec": 0
+    },
+    "test": {
+        "tex_x": 288,
+        "tex_y": 0,
+        "tex_width": 32,
+        "tex_height": 32,
+        "frames": 4,
+        "origin": 16,
+        "looping": 0,
+        "frames_per_sec": 2
+    },
+    "test_horizontal": {
+        "tex_x": 0,
+        "tex_y": 160,
+        "tex_width": 64,
+        "tex_height": 32,
+        "frames": 4,
+        "origin": 16,
+        "looping": 0,
+        "frames_per_sec": 1
+    },
+    "test_vertical": {
+        "tex_x": 0,
+        "tex_y": 224,
+        "tex_width": 32,
+        "tex_height": 64,
+        "frames": 4,
+        "origin": 16,
+        "looping": 0,
+        "frames_per_sec": 1
+    },
+    "zheng": {
+        "tex_x": 416,
+        "tex_y": 0,
+        "tex_width": 32,
+        "tex_height": 32,
+        "frames": 1,
+        "origin": 16,
+        "looping": 0,
+        "frames_per_sec": 0
+    },
+    "mu": {
+        "tex_x": 448,
+        "tex_y": 0,
+        "tex_width": 32,
+        "tex_height": 64,
+        "frames": 1,
+        "origin": 16,
+        "looping": 0,
+        "frames_per_sec": 0
+    },
+    "jump": {
+        "tex_x": 320,
+        "tex_y": 32,
+        "tex_width": 32,
+        "tex_height": 64,
+        "frames": 3,
+        "origin": 60,
+        "looping": 0,
+        "frames_per_sec": 1
     }
 }
