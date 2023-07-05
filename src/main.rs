@@ -13,13 +13,13 @@ const HEIGHT_RESOLUTION_HALF: f32 = 64.0;
 const MAX_RESOLUTION_HALF: f32 = 256.0;
 const MAX_SPRITES_NUM: u32 = 16;
 
-struct ArrowKey {
+struct FourWayArrowKey {
     up: bool,
     down: bool,
     left: bool,
     right: bool,
 }
-impl ArrowKey {
+impl FourWayArrowKey {
     fn vec(&self, max_speed: f32) -> (f32, f32) {
         let mut x = (self.right as i32 as f32 - self.left as i32 as f32) * max_speed;
         let mut y = (self.up as i32 as f32 - self.down as i32 as f32) * max_speed;
@@ -39,6 +39,55 @@ impl ArrowKey {
     }
 }
 
+struct TwoWayArrowKey {
+    left: bool,
+    right: bool,
+
+    max_speed: f32,
+    min_speed: f32,
+    acc: f32,
+    deacc: f32,
+    current_speed: f32,
+}
+impl TwoWayArrowKey {
+    fn new(max_speed: f32, min_speed: f32, acc: f32, deacc: f32) -> Self {
+        Self {
+            left: false,
+            right: false,
+
+            max_speed,
+            min_speed,
+            acc,
+            deacc,
+
+            current_speed: 0.0,
+        }
+    }
+
+    fn update_speed(&mut self, delta_time: f32) {
+        if self.left ^ self.right {
+            if self.left {
+                self.current_speed -= self.acc * delta_time;
+                self.current_speed = self.current_speed.min(-self.min_speed);
+            } else {
+                self.current_speed += self.acc * delta_time;
+                self.current_speed = self.current_speed.max(self.min_speed);
+            }
+        } else {
+            if self.current_speed > 0.0 {
+                self.current_speed -= self.deacc * delta_time;
+            } else if self.current_speed < 0.0 {
+                self.current_speed += self.deacc * delta_time;
+            }
+            if self.current_speed.abs() < 0.1 {
+                self.current_speed = 0.0;
+            }
+        }
+        self.current_speed = self.current_speed.clamp(-self.max_speed, self.max_speed);
+        // println!("{:?}", self.current_speed);
+    }
+}
+
 struct PlayerIndex(usize);
 
 struct GlobalMouseClickPos(f32, f32);
@@ -46,19 +95,19 @@ struct GlobalMouseClickPos(f32, f32);
 struct MinionsSpawn(Vec<usize>);
 
 fn prep_func(table: &mut ecs::Table) {
-    table.add_state(ArrowKey::new_empty()).unwrap();
     let sprite_master = table.read_state::<SpriteMaster3000>().unwrap();
 
     let start_cam_offset = (0.0, -32.0);
     let (player_index, player_sprite) = sprite_master
         .add_sprite(
-            "idle_right",
+            "test_alt",
             (-16.0 + start_cam_offset.0, 16.0 + start_cam_offset.1),
             // (0.0, 0.0),
             0.5,
         )
         .unwrap();
-    // player_sprite.flipped_x = 1;
+    player_sprite.duration = 1.0;
+    player_sprite.looping = 1;
 
     let size = 1024.0;
     let (_, bg_sprite) = sprite_master
@@ -71,6 +120,9 @@ fn prep_func(table: &mut ecs::Table) {
     bg_sprite.width = size;
     bg_sprite.height = size;
 
+    table
+        .add_state(TwoWayArrowKey::new(4.0, 3.0, 5.0, 10.0))
+        .unwrap();
     table.add_state(PlayerIndex(player_index)).unwrap();
     table.add_state(GlobalMouseClickPos(0.0, 0.0)).unwrap();
     table.add_state(MinionsSpawn(vec![])).unwrap();
@@ -84,7 +136,7 @@ fn entry_point(table: &mut ecs::Table) {
     let player_index = table.read_state::<PlayerIndex>().unwrap().0;
     let player_sprite = table.read_single::<Sprite>(player_index).unwrap();
 
-    let arrow_key_state = table.read_state::<ArrowKey>().unwrap();
+    let speed_resolver = table.read_state::<TwoWayArrowKey>().unwrap();
     let global_click_pos = table.read_state::<GlobalMouseClickPos>().unwrap();
     let mod_state = table.read_state::<winit::event::ModifiersState>().unwrap();
     let mouse_state = table.read_state::<MouseState>().unwrap();
@@ -98,6 +150,18 @@ fn entry_point(table: &mut ecs::Table) {
         (1.0 - mouse_state.y() / (uniform_data.window_height * 0.5))
             * uniform_data.height_resolution,
     );
+
+    if sprite_master.read_anim_data(player_index).unwrap().cycles == 1 {
+        sprite_master
+            .change_state(player_index, "test", false)
+            .unwrap();
+    }
+
+    // println!("{:?}", sprite_master.get_name(player_index).unwrap());
+    // println!(
+    //     "{:?}",
+    //     sprite_master.read_anim_data(player_index).unwrap().cycles
+    // );
 
     // quitting
     if key_state.just_clicked(VirtualKeyCode::Q) {
@@ -140,36 +204,8 @@ fn entry_point(table: &mut ecs::Table) {
 
     // show dtime
     if mouse_state.right_button_pressed() {
-        println!("{:?}", uniform_data.delta_time);
+        // println!("{:?}", uniform_data.delta_time);
     }
-
-    // show data
-    if key_state.just_clicked(VirtualKeyCode::Space) {
-        // println!("{:?}", uniform_data);
-        // println!("{:?}", (mouse_state.x(), mouse_state.y()));
-        // println!("{:?}", table.read_column::<Sprite>().unwrap());
-        println!("{:?}", sprite_master.occupied_indices);
-        // println!("{:?}", (player_sprite.pos_x, player_sprite.pos_y));
-
-        // player_sprite.flipped_y = if player_sprite.flipped_y == 0 { 1 } else { 0 };
-        // player_sprite.paused = if player_sprite.paused == 0 { 1 } else { 0 };
-        // player_sprite.reversed = if player_sprite.reversed == 0 { 1 } else { 0 };
-        // player_sprite.duration *= 0.95;
-        // println!("{:?}", player_sprite.duration);
-        // player_sprite.looping = if player_sprite.looping == 0 { 1 } else { 0 };
-    }
-
-    // change state of animation
-    // if key_state.just_clicked(VirtualKeyCode::X) {
-    //     sprite_master
-    //         .change_state(player_index, "jump", false)
-    //         .unwrap();
-    // }
-    // if key_state.just_clicked(VirtualKeyCode::C) {
-    //     sprite_master
-    //         .change_state(player_index, "test", false)
-    //         .unwrap();
-    // }
 
     // spawn minions
     if mouse_state.left_button_clicked() & !mouse_state.middle_button_pressed() {
@@ -185,45 +221,49 @@ fn entry_point(table: &mut ecs::Table) {
         for each in &minions_spawned.0 {
             sprite_master.remove_sprite(*each).unwrap();
         }
-        println!("{:?}", minions_spawned.0);
+        // println!("{:?}", minions_spawned.0);
         minions_spawned.0.clear();
     }
 
-    // updating sprite position
-    // todo add accelaration
-
-    if key_state.is_pressed(VirtualKeyCode::A) {
-        arrow_key_state.left = true;
-    } else {
-        arrow_key_state.left = false;
-    }
-    if key_state.is_pressed(VirtualKeyCode::D) {
-        arrow_key_state.right = true;
-    } else {
-        arrow_key_state.right = false;
+    // space
+    if key_state.just_clicked(VirtualKeyCode::Space) {
+        println!("{:?}", sprite_master.names);
     }
 
-    let vec = arrow_key_state.vec(75.0 * uniform_data.delta_time);
-    if vec.0 != 0.0 {
-        if vec.0 < 0.0 {
-            player_sprite.flipped_x = 1;
-        } else {
-            player_sprite.flipped_x = 0;
-        }
-        sprite_master
-            .change_state(player_index, "run_right", false)
-            .unwrap();
-    } else {
-        sprite_master
-            .change_state(player_index, "idle_right", false)
-            .unwrap();
-    }
-    player_sprite.pos_x += vec.0;
-    player_sprite.pos_y += vec.1;
+    // // jump todo collision
+    // if key_state.just_clicked(VirtualKeyCode::Space) {}
+    // // updating sprite position
+    // if key_state.is_pressed(VirtualKeyCode::A) {
+    //     speed_resolver.left = true;
+    // } else {
+    //     speed_resolver.left = false;
+    // }
+    // if key_state.is_pressed(VirtualKeyCode::D) {
+    //     speed_resolver.right = true;
+    // } else {
+    //     speed_resolver.right = false;
+    // }
+
+    // speed_resolver.update_speed(uniform_data.delta_time);
+    // if speed_resolver.current_speed != 0.0 {
+    //     if speed_resolver.current_speed < 0.0 {
+    //         player_sprite.flipped_x = 1;
+    //     } else {
+    //         player_sprite.flipped_x = 0;
+    //     }
+    //     sprite_master
+    //         .change_state(player_index, "run_right", false)
+    //         .unwrap();
+    // } else {
+    //     sprite_master
+    //         .change_state(player_index, "idle_right", false)
+    //         .unwrap();
+    // }
+    // player_sprite.pos_x += speed_resolver.current_speed;
 }
 
 fn post_func(table: &mut ecs::Table) {
-    println!("wrapping up uwu")
+    // println!("wrapping up uwu")
 }
 
 fn main() {

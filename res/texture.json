@@ -37,7 +37,17 @@
         "frames": 4,
         "origin": 16,
         "looping": 0,
-        "frames_per_sec": 2
+        "frames_per_sec": 1
+    },
+    "test_alt": {
+        "tex_x": 0,
+        "tex_y": 96,
+        "tex_width": 32,
+        "tex_height": 32,
+        "frames": 4,
+        "origin": 16,
+        "looping": 0,
+        "frames_per_sec": 1
     },
     "test_horizontal": {
         "tex_x": 0,
