@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 renderer = { path = "../renderer" }
 rand = { version = "0.8.5" }
+rodio = "0.17.0"

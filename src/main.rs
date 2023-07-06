@@ -11,7 +11,7 @@ use winit::event::VirtualKeyCode;
 
 const HEIGHT_RESOLUTION_HALF: f32 = 64.0;
 const MAX_RESOLUTION_HALF: f32 = 256.0;
-const MAX_SPRITES_NUM: u32 = 16;
+const MAX_SPRITES_NUM: u32 = 512;
 
 struct FourWayArrowKey {
     up: bool,
@@ -89,6 +89,7 @@ impl TwoWayArrowKey {
 }
 
 struct PlayerIndex(usize);
+struct WallIndex(usize);
 
 struct GlobalMouseClickPos(f32, f32);
 
@@ -96,17 +97,18 @@ struct MinionsSpawn(Vec<usize>);
 
 fn prep_func(table: &mut ecs::Table) {
     let sprite_master = table.read_state::<SpriteMaster3000>().unwrap();
+    let collision_manager = table.read_state::<CollisionManager>().unwrap();
 
     let start_cam_offset = (0.0, -32.0);
     let (player_index, player_sprite) = sprite_master
         .add_sprite(
-            "test_alt",
+            "idle_right",
             (-16.0 + start_cam_offset.0, 16.0 + start_cam_offset.1),
             // (0.0, 0.0),
             0.5,
         )
         .unwrap();
-    player_sprite.duration = 1.0;
+    // player_sprite.duration = 1.0;
     player_sprite.looping = 1;
 
     let size = 1024.0;
@@ -120,12 +122,27 @@ fn prep_func(table: &mut ecs::Table) {
     bg_sprite.width = size;
     bg_sprite.height = size;
 
+    // add collision shapes
+    collision_manager
+        .insert_collision_rect(
+            player_index,
+            (-16.0 + start_cam_offset.0, 16.0 + start_cam_offset.1),
+            (32.0, 32.0),
+        )
+        .unwrap();
+    // test collision shape
+    let wall_index = collision_manager.add_collision_rect(
+        (-16.0 + start_cam_offset.0, 16.0 + start_cam_offset.1),
+        (32.0, 32.0),
+    );
+
     table
-        .add_state(TwoWayArrowKey::new(4.0, 3.0, 5.0, 10.0))
+        .add_state(TwoWayArrowKey::new(3.0, 2.0, 5.0, 10.0))
         .unwrap();
     table.add_state(PlayerIndex(player_index)).unwrap();
     table.add_state(GlobalMouseClickPos(0.0, 0.0)).unwrap();
     table.add_state(MinionsSpawn(vec![])).unwrap();
+    table.add_state(WallIndex(wall_index)).unwrap();
 }
 
 fn entry_point(table: &mut ecs::Table) {
@@ -135,6 +152,8 @@ fn entry_point(table: &mut ecs::Table) {
     let sprite_master = table.read_state::<SpriteMaster3000>().unwrap();
     let player_index = table.read_state::<PlayerIndex>().unwrap().0;
     let player_sprite = table.read_single::<Sprite>(player_index).unwrap();
+    let collision_manager = table.read_state::<CollisionManager>().unwrap();
+    let player_collision_rect = table.read_single::<CollisionRect>(player_index).unwrap();
 
     let speed_resolver = table.read_state::<TwoWayArrowKey>().unwrap();
     let global_click_pos = table.read_state::<GlobalMouseClickPos>().unwrap();
@@ -150,18 +169,6 @@ fn entry_point(table: &mut ecs::Table) {
         (1.0 - mouse_state.y() / (uniform_data.window_height * 0.5))
             * uniform_data.height_resolution,
     );
-
-    if sprite_master.read_anim_data(player_index).unwrap().cycles == 1 {
-        sprite_master
-            .change_state(player_index, "test", false)
-            .unwrap();
-    }
-
-    // println!("{:?}", sprite_master.get_name(player_index).unwrap());
-    // println!(
-    //     "{:?}",
-    //     sprite_master.read_anim_data(player_index).unwrap().cycles
-    // );
 
     // quitting
     if key_state.just_clicked(VirtualKeyCode::Q) {
@@ -202,9 +209,16 @@ fn entry_point(table: &mut ecs::Table) {
         }
     }
 
+    // check collision
+    if collision_manager
+        .check_if_colliding(player_index, table.read_state::<WallIndex>().unwrap().0)
+    {
+        println!("omg colliding uwu");
+    }
+
     // show dtime
     if mouse_state.right_button_pressed() {
-        // println!("{:?}", uniform_data.delta_time);
+        println!("{:?}", uniform_data.delta_time);
     }
 
     // spawn minions
@@ -227,39 +241,43 @@ fn entry_point(table: &mut ecs::Table) {
 
     // space
     if key_state.just_clicked(VirtualKeyCode::Space) {
-        println!("{:?}", sprite_master.names);
+        // println!("{:?}", sprite_master.names);
+        // println!("{:?}", sprite_master.occupied_indices);
+        // println!("{:?}, {:?}", player_sprite, player_collision_rect);
+        println!("{:?}", collision_manager.colliding_list);
     }
 
-    // // jump todo collision
-    // if key_state.just_clicked(VirtualKeyCode::Space) {}
-    // // updating sprite position
-    // if key_state.is_pressed(VirtualKeyCode::A) {
-    //     speed_resolver.left = true;
-    // } else {
-    //     speed_resolver.left = false;
-    // }
-    // if key_state.is_pressed(VirtualKeyCode::D) {
-    //     speed_resolver.right = true;
-    // } else {
-    //     speed_resolver.right = false;
-    // }
+    // jump todo collision
+    if key_state.just_clicked(VirtualKeyCode::Space) {}
+    // updating sprite position
+    if key_state.is_pressed(VirtualKeyCode::A) {
+        speed_resolver.left = true;
+    } else {
+        speed_resolver.left = false;
+    }
+    if key_state.is_pressed(VirtualKeyCode::D) {
+        speed_resolver.right = true;
+    } else {
+        speed_resolver.right = false;
+    }
 
-    // speed_resolver.update_speed(uniform_data.delta_time);
-    // if speed_resolver.current_speed != 0.0 {
-    //     if speed_resolver.current_speed < 0.0 {
-    //         player_sprite.flipped_x = 1;
-    //     } else {
-    //         player_sprite.flipped_x = 0;
-    //     }
-    //     sprite_master
-    //         .change_state(player_index, "run_right", false)
-    //         .unwrap();
-    // } else {
-    //     sprite_master
-    //         .change_state(player_index, "idle_right", false)
-    //         .unwrap();
-    // }
-    // player_sprite.pos_x += speed_resolver.current_speed;
+    speed_resolver.update_speed(uniform_data.delta_time);
+    if speed_resolver.current_speed != 0.0 {
+        if speed_resolver.current_speed < 0.0 {
+            player_sprite.flipped_x = 1;
+        } else {
+            player_sprite.flipped_x = 0;
+        }
+        sprite_master
+            .change_state(player_index, "run_right", false)
+            .unwrap();
+    } else {
+        sprite_master
+            .change_state(player_index, "idle_right", false)
+            .unwrap();
+    }
+    player_sprite.pos_x += speed_resolver.current_speed;
+    player_collision_rect.pos_x += speed_resolver.current_speed;
 }
 
 fn post_func(table: &mut ecs::Table) {
