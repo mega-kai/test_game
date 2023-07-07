@@ -89,14 +89,34 @@
         "looping": 0,
         "frames_per_sec": 0
     },
-    "jump": {
+    "jump_start": {
         "tex_x": 320,
         "tex_y": 32,
         "tex_width": 32,
-        "tex_height": 64,
-        "frames": 3,
+        "tex_height": 36,
+        "frames": 1,
         "origin": 60,
         "looping": 0,
-        "frames_per_sec": 1
+        "frames_per_sec": 0
+    },
+    "jump_mid_air": {
+        "tex_x": 352,
+        "tex_y": 32,
+        "tex_width": 32,
+        "tex_height": 36,
+        "frames": 1,
+        "origin": 60,
+        "looping": 0,
+        "frames_per_sec": 0
+    },
+    "jump_fall": {
+        "tex_x": 384,
+        "tex_y": 32,
+        "tex_width": 32,
+        "tex_height": 35,
+        "frames": 1,
+        "origin": 60,
+        "looping": 0,
+        "frames_per_sec": 0
     }
 }

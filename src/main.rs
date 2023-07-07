@@ -13,32 +13,6 @@ const HEIGHT_RESOLUTION_HALF: f32 = 64.0;
 const MAX_RESOLUTION_HALF: f32 = 256.0;
 const MAX_SPRITES_NUM: u32 = 512;
 
-struct FourWayArrowKey {
-    up: bool,
-    down: bool,
-    left: bool,
-    right: bool,
-}
-impl FourWayArrowKey {
-    fn vec(&self, max_speed: f32) -> (f32, f32) {
-        let mut x = (self.right as i32 as f32 - self.left as i32 as f32) * max_speed;
-        let mut y = (self.up as i32 as f32 - self.down as i32 as f32) * max_speed;
-        if x != 0f32 && y != 0f32 {
-            x /= 2f32.sqrt();
-            y /= 2f32.sqrt();
-        }
-        (x, y)
-    }
-    fn new_empty() -> Self {
-        Self {
-            up: false,
-            down: false,
-            left: false,
-            right: false,
-        }
-    }
-}
-
 struct TwoWayArrowKey {
     left: bool,
     right: bool,
@@ -48,9 +22,15 @@ struct TwoWayArrowKey {
     acc: f32,
     deacc: f32,
     current_speed: f32,
+
+    vertical_speed: f32,
+    gravity_constant: f32,
+
+    in_air: bool,
+    double_jumped: bool,
 }
 impl TwoWayArrowKey {
-    fn new(max_speed: f32, min_speed: f32, acc: f32, deacc: f32) -> Self {
+    fn new(max_speed: f32, min_speed: f32, acc: f32, deacc: f32, gravity_constant: f32) -> Self {
         Self {
             left: false,
             right: false,
@@ -61,35 +41,54 @@ impl TwoWayArrowKey {
             deacc,
 
             current_speed: 0.0,
+
+            gravity_constant,
+            vertical_speed: 0.0,
+
+            in_air: false,
+            double_jumped: false,
         }
     }
 
     fn update_speed(&mut self, delta_time: f32) {
-        if self.left ^ self.right {
-            if self.left {
-                self.current_speed -= self.acc * delta_time;
-                self.current_speed = self.current_speed.min(-self.min_speed);
+        if !self.in_air {
+            if self.left ^ self.right {
+                if self.left {
+                    self.current_speed -= self.acc * delta_time;
+                    self.current_speed = self.current_speed.min(-self.min_speed);
+                } else {
+                    self.current_speed += self.acc * delta_time;
+                    self.current_speed = self.current_speed.max(self.min_speed);
+                }
             } else {
-                self.current_speed += self.acc * delta_time;
-                self.current_speed = self.current_speed.max(self.min_speed);
+                if self.current_speed > 0.0 {
+                    self.current_speed -= self.deacc * delta_time;
+                } else if self.current_speed < 0.0 {
+                    self.current_speed += self.deacc * delta_time;
+                }
+                if self.current_speed.abs() < 0.1 {
+                    self.current_speed = 0.0;
+                }
             }
         } else {
-            if self.current_speed > 0.0 {
-                self.current_speed -= self.deacc * delta_time;
-            } else if self.current_speed < 0.0 {
-                self.current_speed += self.deacc * delta_time;
-            }
-            if self.current_speed.abs() < 0.1 {
-                self.current_speed = 0.0;
+            if self.left ^ self.right {
+                if self.left {
+                    self.current_speed -= self.acc * delta_time;
+                } else {
+                    self.current_speed += self.acc * delta_time;
+                }
             }
         }
+
+        self.vertical_speed -= self.gravity_constant * delta_time;
         self.current_speed = self.current_speed.clamp(-self.max_speed, self.max_speed);
+
         // println!("{:?}", self.current_speed);
     }
 }
 
 struct PlayerIndex(usize);
-struct WallIndex(usize);
+struct FloorCollisionIndex(usize);
 
 struct GlobalMouseClickPos(f32, f32);
 
@@ -131,18 +130,18 @@ fn prep_func(table: &mut ecs::Table) {
         )
         .unwrap();
     // test collision shape
-    let wall_index = collision_manager.add_collision_rect(
-        (-16.0 + start_cam_offset.0, 16.0 + start_cam_offset.1),
-        (32.0, 32.0),
+    let floor = collision_manager.add_collision_rect(
+        (-size / 2.0 + start_cam_offset.0, -16.0 + start_cam_offset.1),
+        (size, size),
     );
 
     table
-        .add_state(TwoWayArrowKey::new(3.0, 2.0, 5.0, 10.0))
+        .add_state(TwoWayArrowKey::new(3.0, 2.0, 5.0, 10.0, 9.8))
         .unwrap();
     table.add_state(PlayerIndex(player_index)).unwrap();
     table.add_state(GlobalMouseClickPos(0.0, 0.0)).unwrap();
     table.add_state(MinionsSpawn(vec![])).unwrap();
-    table.add_state(WallIndex(wall_index)).unwrap();
+    table.add_state(FloorCollisionIndex(floor)).unwrap();
 }
 
 fn entry_point(table: &mut ecs::Table) {
@@ -155,11 +154,12 @@ fn entry_point(table: &mut ecs::Table) {
     let collision_manager = table.read_state::<CollisionManager>().unwrap();
     let player_collision_rect = table.read_single::<CollisionRect>(player_index).unwrap();
 
-    let speed_resolver = table.read_state::<TwoWayArrowKey>().unwrap();
     let global_click_pos = table.read_state::<GlobalMouseClickPos>().unwrap();
     let mod_state = table.read_state::<winit::event::ModifiersState>().unwrap();
     let mouse_state = table.read_state::<MouseState>().unwrap();
     let key_state = table.read_state::<KeyState>().unwrap();
+
+    let speed_resolver = table.read_state::<TwoWayArrowKey>().unwrap();
 
     let ratio = uniform_data.window_height / uniform_data.window_width;
     let relative_click_pos = (
@@ -169,6 +169,9 @@ fn entry_point(table: &mut ecs::Table) {
         (1.0 - mouse_state.y() / (uniform_data.window_height * 0.5))
             * uniform_data.height_resolution,
     );
+
+    let floor_index = table.read_state::<FloorCollisionIndex>().unwrap().0;
+    let floor_rect = table.read_single::<CollisionRect>(floor_index).unwrap();
 
     // quitting
     if key_state.just_clicked(VirtualKeyCode::Q) {
@@ -209,13 +212,6 @@ fn entry_point(table: &mut ecs::Table) {
         }
     }
 
-    // check collision
-    if collision_manager
-        .check_if_colliding(player_index, table.read_state::<WallIndex>().unwrap().0)
-    {
-        println!("omg colliding uwu");
-    }
-
     // show dtime
     if mouse_state.right_button_pressed() {
         println!("{:?}", uniform_data.delta_time);
@@ -239,17 +235,21 @@ fn entry_point(table: &mut ecs::Table) {
         minions_spawned.0.clear();
     }
 
-    // space
-    if key_state.just_clicked(VirtualKeyCode::Space) {
-        // println!("{:?}", sprite_master.names);
-        // println!("{:?}", sprite_master.occupied_indices);
-        // println!("{:?}, {:?}", player_sprite, player_collision_rect);
-        println!("{:?}", collision_manager.colliding_list);
+    if key_state.is_pressed(VirtualKeyCode::Home) {
+        uniform_data.global_offset_x += 2.0 * (rand::random::<f32>() - 0.5);
+        uniform_data.global_offset_y += 2.0 * (rand::random::<f32>() - 0.5);
     }
 
-    // jump todo collision
-    if key_state.just_clicked(VirtualKeyCode::Space) {}
-    // updating sprite position
+    // give speed input
+    if key_state.just_clicked(VirtualKeyCode::Space) {
+        if !speed_resolver.in_air {
+            speed_resolver.vertical_speed += 5.0;
+        } else if !speed_resolver.double_jumped {
+            speed_resolver.double_jumped = true;
+            speed_resolver.vertical_speed += 3.0;
+        }
+    }
+    // println!("{:?}", speed_resolver.vertical_speed);
     if key_state.is_pressed(VirtualKeyCode::A) {
         speed_resolver.left = true;
     } else {
@@ -262,22 +262,60 @@ fn entry_point(table: &mut ecs::Table) {
     }
 
     speed_resolver.update_speed(uniform_data.delta_time);
-    if speed_resolver.current_speed != 0.0 {
-        if speed_resolver.current_speed < 0.0 {
-            player_sprite.flipped_x = 1;
-        } else {
-            player_sprite.flipped_x = 0;
-        }
-        sprite_master
-            .change_state(player_index, "run_right", false)
-            .unwrap();
-    } else {
-        sprite_master
-            .change_state(player_index, "idle_right", false)
-            .unwrap();
-    }
+
     player_sprite.pos_x += speed_resolver.current_speed;
-    player_collision_rect.pos_x += speed_resolver.current_speed;
+    player_sprite.pos_y += speed_resolver.vertical_speed;
+    player_collision_rect.sync_all(player_sprite);
+
+    if player_collision_rect.pos_y > -16.0 {
+        speed_resolver.in_air = true;
+    }
+
+    // falling on the ground
+    if collision_manager.check_if_colliding(player_index, floor_index)
+        && player_collision_rect.pos_y < -16.0
+    {
+        player_sprite.pos_y = -16.0;
+        speed_resolver.vertical_speed = 0.0;
+        speed_resolver.in_air = false;
+        speed_resolver.double_jumped = false;
+    }
+    println!("{:?}", speed_resolver.double_jumped);
+
+    // update animation according the speed data
+    if speed_resolver.in_air {
+        if speed_resolver.vertical_speed >= 0.0 {
+            if speed_resolver.vertical_speed <= 0.5 {
+                sprite_master
+                    .change_state(player_index, "jump_mid_air")
+                    .unwrap();
+            } else {
+                sprite_master
+                    .change_state(player_index, "jump_start")
+                    .unwrap();
+            }
+        } else {
+            sprite_master
+                .change_state(player_index, "jump_fall")
+                .unwrap();
+        }
+    } else {
+        if speed_resolver.current_speed != 0.0 {
+            sprite_master
+                .change_state(player_index, "run_right")
+                .unwrap();
+        } else {
+            sprite_master
+                .change_state(player_index, "idle_right")
+                .unwrap();
+        }
+    }
+    if speed_resolver.current_speed < 0.0 {
+        player_sprite.flipped_x = 1;
+    } else if speed_resolver.current_speed > 0.0 {
+        player_sprite.flipped_x = 0;
+    }
+    player_collision_rect.sync_all(player_sprite);
 }
 
 fn post_func(table: &mut ecs::Table) {
