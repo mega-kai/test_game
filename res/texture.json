@@ -25,7 +25,7 @@
         "tex_width": 32,
         "tex_height": 32,
         "frames": 1,
-        "origin": 16,
+        "origin": 0,
         "looping": 0,
         "frames_per_sec": 0
     },

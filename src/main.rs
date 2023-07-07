@@ -104,7 +104,7 @@ fn prep_func(table: &mut ecs::Table) {
             "idle_right",
             (-16.0 + start_cam_offset.0, 16.0 + start_cam_offset.1),
             // (0.0, 0.0),
-            0.5,
+            0.4,
         )
         .unwrap();
     // player_sprite.duration = 1.0;
@@ -127,12 +127,18 @@ fn prep_func(table: &mut ecs::Table) {
             player_index,
             (-16.0 + start_cam_offset.0, 16.0 + start_cam_offset.1),
             (32.0, 32.0),
+            player_sprite.base_depth,
+            0.1,
+            0,
         )
         .unwrap();
     // test collision shape
     let floor = collision_manager.add_collision_rect(
         (-size / 2.0 + start_cam_offset.0, -16.0 + start_cam_offset.1),
         (size, size),
+        player_sprite.base_depth,
+        0.1,
+        0,
     );
 
     table
@@ -225,6 +231,7 @@ fn entry_point(table: &mut ecs::Table) {
         new_sprite.pos_y = global_click_pos.1 + 16.0 + 0.001 * (rand::random::<f32>() - 0.5);
         minions_spawned.0.push(index);
     }
+
     // clear minions
     if key_state.just_clicked(VirtualKeyCode::V) {
         let minions_spawned = table.read_state::<MinionsSpawn>().unwrap();
@@ -246,7 +253,7 @@ fn entry_point(table: &mut ecs::Table) {
             speed_resolver.vertical_speed += 5.0;
         } else if !speed_resolver.double_jumped {
             speed_resolver.double_jumped = true;
-            speed_resolver.vertical_speed += 3.0;
+            speed_resolver.vertical_speed = 5.0;
         }
     }
     // println!("{:?}", speed_resolver.vertical_speed);
@@ -265,7 +272,16 @@ fn entry_point(table: &mut ecs::Table) {
 
     player_sprite.pos_x += speed_resolver.current_speed;
     player_sprite.pos_y += speed_resolver.vertical_speed;
-    player_collision_rect.sync_all(player_sprite);
+    player_collision_rect.sync_size_and_pos(player_sprite);
+    // player_collision_rect.actual_depth = sprite_master
+    //     .read_anim_data(player_index)
+    //     .unwrap()
+    //     .actual_depth;
+
+    println!(
+        "{:?}, {:?}",
+        player_collision_rect.actual_depth, floor_rect.actual_depth
+    );
 
     if player_collision_rect.pos_y > -16.0 {
         speed_resolver.in_air = true;
@@ -280,7 +296,7 @@ fn entry_point(table: &mut ecs::Table) {
         speed_resolver.in_air = false;
         speed_resolver.double_jumped = false;
     }
-    println!("{:?}", speed_resolver.double_jumped);
+    // println!("{:?}", speed_resolver.double_jumped);
 
     // update animation according the speed data
     if speed_resolver.in_air {
@@ -315,7 +331,16 @@ fn entry_point(table: &mut ecs::Table) {
     } else if speed_resolver.current_speed > 0.0 {
         player_sprite.flipped_x = 0;
     }
-    player_collision_rect.sync_all(player_sprite);
+    player_collision_rect.sync_size_and_pos(player_sprite);
+
+    // println!(
+    //     "{:?}",
+    //     sprite_master
+    //         .read_anim_data(player_index)
+    //         .unwrap()
+    //         .actual_depth,
+    // );
+    // println!("{:?}", uniform_data,);
 }
 
 fn post_func(table: &mut ecs::Table) {
