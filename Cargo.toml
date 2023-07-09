@@ -9,3 +9,12 @@ edition = "2021"
 renderer = { path = "../renderer" }
 rand = { version = "0.8.5" }
 rodio = "0.17.0"
+
+[profile.release]
+strip = true    # Automatically strip symbols from the binary.
+opt-level = 3   # Optimize for speed.
+lto = true
+panic = "abort"
+
+# cargo +nightly build -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort \
+# --target x86_64-pc-windows-gnu --release
