@@ -89,7 +89,7 @@ impl TwoWayArrowKey {
 }
 
 struct PlayerAccess((ecs::Access<Sprite>, ecs::Access<CollisionRect>));
-struct FloorCollisionIndex(usize);
+struct FloorCollisionAccess(Access<CollisionRect>);
 
 struct GlobalMouseClickPos(f32, f32);
 
@@ -148,9 +148,7 @@ fn prep_func(table: &mut ecs::Table) {
         .unwrap();
     table.add_state(GlobalMouseClickPos(0.0, 0.0)).unwrap();
     table.add_state(MinionsSpawn(vec![])).unwrap();
-    table
-        .add_state(FloorCollisionIndex(floor.get_sparse_index().unwrap()))
-        .unwrap();
+    table.add_state(FloorCollisionAccess(floor)).unwrap();
 }
 
 fn entry_point(table: &mut ecs::Table) {
@@ -161,6 +159,7 @@ fn entry_point(table: &mut ecs::Table) {
     let mut collision_manager = table.read_state::<CollisionManager>().unwrap();
 
     let (player, player_collision_rect) = &mut table.read_state::<PlayerAccess>().unwrap().0;
+    let floor_rect = &table.read_state::<FloorCollisionAccess>().unwrap().0;
 
     let mod_state = table
         .read_state::<winit::keyboard::ModifiersState>()
@@ -179,9 +178,6 @@ fn entry_point(table: &mut ecs::Table) {
         (1.0 - mouse_state.y() / (uniform_data.window_height * 0.5))
             * uniform_data.height_resolution,
     );
-
-    let floor_index = table.read_state::<FloorCollisionIndex>().unwrap().0;
-    let floor_rect = table.read::<CollisionRect>(floor_index).unwrap();
 
     // quitting
     if key_state.just_clicked(winit::keyboard::KeyCode::KeyQ) {
@@ -223,16 +219,18 @@ fn entry_point(table: &mut ecs::Table) {
     }
 
     // show dtime
-    if mouse_state.right_button_pressed() {
+    if mouse_state.right_button_clicked() {
         // println!("{:?}", uniform_data.delta_time);
+        // println!("{:?}", unsafe {
+        //     table.read_column::<Sprite>().unwrap().len()
+        // });
+        // println!("{:?}", sprite_master.read_anim_data(player));
     }
 
     // spawn minions
     if mouse_state.left_button_clicked() & !mouse_state.middle_button_pressed() {
         let mut minions_spawned = table.read_state::<MinionsSpawn>().unwrap();
-        let mut new_sprite = sprite_master
-            .clone_add(player.get_sparse_index().unwrap())
-            .unwrap();
+        let mut new_sprite = sprite_master.clone_add(player).unwrap();
         new_sprite.base_depth = 0.5;
         new_sprite.pos_x = global_click_pos.0 - 16.0;
         new_sprite.pos_y = global_click_pos.1 + 16.0 + 0.001 * (rand::random::<f32>() - 0.5);
@@ -279,32 +277,21 @@ fn entry_point(table: &mut ecs::Table) {
 
     speed_resolver.update_speed(uniform_data.delta_time);
 
-    table
-        .read::<Sprite>(player.get_sparse_index().unwrap())
-        .unwrap()
-        .pos_x += speed_resolver.current_speed;
-    table
-        .read::<Sprite>(player.get_sparse_index().unwrap())
-        .unwrap()
-        .pos_y += speed_resolver.vertical_speed;
-    player_collision_rect.sync_size_and_pos(
-        &table
-            .read::<Sprite>(player.get_sparse_index().unwrap())
-            .unwrap(),
-    );
+    player.pos_x += speed_resolver.current_speed;
+    player.pos_y += speed_resolver.vertical_speed;
+    player_collision_rect.sync_size_and_pos(&player);
 
     if player_collision_rect.pos_y > -16.0 {
         speed_resolver.in_air = true;
     }
 
     // falling on the ground
-    if collision_manager.check_if_colliding(player.get_sparse_index().unwrap(), floor_index)
-        && player_collision_rect.pos_y < -16.0
+    if collision_manager.check_if_colliding(
+        player.get_sparse_index().unwrap(),
+        floor_rect.get_sparse_index().unwrap(),
+    ) && player_collision_rect.pos_y < -16.0
     {
-        table
-            .read::<Sprite>(player.get_sparse_index().unwrap())
-            .unwrap()
-            .pos_y = -16.0;
+        player.pos_y = -16.0;
         speed_resolver.vertical_speed = 0.0;
         speed_resolver.in_air = false;
         speed_resolver.double_jumped = false;
@@ -314,46 +301,26 @@ fn entry_point(table: &mut ecs::Table) {
     if speed_resolver.in_air {
         if speed_resolver.vertical_speed >= 0.0 {
             if speed_resolver.vertical_speed <= 0.5 {
-                sprite_master
-                    .change_state(player.get_sparse_index().unwrap(), "jump_mid_air")
-                    .unwrap();
+                sprite_master.change_state(player, "jump_mid_air").unwrap();
             } else {
-                sprite_master
-                    .change_state(player.get_sparse_index().unwrap(), "jump_start")
-                    .unwrap();
+                sprite_master.change_state(player, "jump_start").unwrap();
             }
         } else {
-            sprite_master
-                .change_state(player.get_sparse_index().unwrap(), "jump_fall")
-                .unwrap();
+            sprite_master.change_state(player, "jump_fall").unwrap();
         }
     } else {
         if speed_resolver.current_speed != 0.0 {
-            sprite_master
-                .change_state(player.get_sparse_index().unwrap(), "run_right")
-                .unwrap();
+            sprite_master.change_state(player, "run_right").unwrap();
         } else {
-            sprite_master
-                .change_state(player.get_sparse_index().unwrap(), "idle_right")
-                .unwrap();
+            sprite_master.change_state(player, "idle_right").unwrap();
         }
     }
     if speed_resolver.current_speed < 0.0 {
-        table
-            .read::<Sprite>(player.get_sparse_index().unwrap())
-            .unwrap()
-            .flipped_x = 1;
+        player.flipped_x = 1;
     } else if speed_resolver.current_speed > 0.0 {
-        table
-            .read::<Sprite>(player.get_sparse_index().unwrap())
-            .unwrap()
-            .flipped_x = 0;
+        player.flipped_x = 0;
     }
-    player_collision_rect.sync_size_and_pos(
-        &table
-            .read::<Sprite>(player.get_sparse_index().unwrap())
-            .unwrap(),
-    );
+    player_collision_rect.sync_size_and_pos(&player);
 }
 
 fn post_func(table: &mut ecs::Table) {
