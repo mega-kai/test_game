@@ -1,1 +1,5 @@
 /target
+/.vscode
+/Cargo.lock
+/res
+/vgcore.3874
